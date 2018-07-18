@@ -9,20 +9,27 @@ import (
 
 func main() {
 
+	// newPool returns a pointer to a redis.Pool
 	pool := newPool()
+	// get a connection from the pool (redis.Conn)
 	conn := pool.Get()
+	// use defer to close the connection when the function completes
 	defer conn.Close()
 
+	// call Redis PING command to test connectivity
 	err := ping(conn)
 	if err != nil {
 		fmt.Println(err)
 	}
 
+	// set demonstrates the redis SET command using a simple
+	// string key:value pair
 	err = set(conn)
 	if err != nil {
 		fmt.Println(err)
 	}
 
+	// set demonstrates the redis GET command
 	err = get(conn)
 	if err != nil {
 		fmt.Println(err)
@@ -41,8 +48,12 @@ func main() {
 
 func newPool() *redis.Pool {
 	return &redis.Pool{
-		MaxIdle:   80,
-		MaxActive: 12000, // max number of connections
+		// Maximum number of idle connections in the pool.
+		MaxIdle: 80,
+		// max number of connections
+		MaxActive: 12000,
+		// Dial is an application supplied function for creating and
+		// configuring a connection.
 		Dial: func() (redis.Conn, error) {
 			c, err := redis.Dial("tcp", ":6379")
 			if err != nil {
@@ -55,43 +66,62 @@ func newPool() *redis.Pool {
 
 // ping tests connectivity for redis (PONG should be returned)
 func ping(c redis.Conn) error {
-	pong, err := c.Do("PING")
+	// Send PING command to Redis
+	// PING command returns a Redis "Simple String"
+	// Use redis.String to convert the interface type to string
+	s, err := redis.String(c.Do("PING"))
 	if err != nil {
 		return err
 	}
-	fmt.Println(pong, err)
-	// Output: PONG <nil>
+
+	fmt.Printf("PING Response = %s\n", s)
+	// Output: PONG
 
 	return nil
 }
 
-// set executes the redis Set command
+// set executes the redis SET command
 func set(c redis.Conn) error {
-	_, err := c.Do("SET", "key", "value")
+	_, err := c.Do("SET", "Favorite Movie", "Repo Man")
+	if err != nil {
+		return err
+	}
+	_, err = c.Do("SET", "Release Year", 1984)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
+// get executes the redis GET command
 func get(c redis.Conn) error {
-	reply, err := c.Do("GET", "key")
-	val, err := redis.String(reply, err)
+
+	// Simple GET example with String helper
+	key := "Favorite Movie"
+	s, err := redis.String(c.Do("GET", key))
 	if err != nil {
 		return (err)
 	}
-	fmt.Println("key", val)
+	fmt.Printf("%s = %s\n", key, s)
 
-	val2, err := redis.String(c.Do("GET", "key2"))
-	if err == redis.ErrNil {
-		fmt.Println("key2 does not exist")
-	} else if err != nil {
-		panic(err)
-	} else {
-		fmt.Println("key2", val2)
+	// Simple GET example with Int helper
+	key = "Release Year"
+	i, err := redis.Int(c.Do("GET", key))
+	if err != nil {
+		return (err)
 	}
-	// Output: key value
-	// key2 does not exist
+	fmt.Printf("%s = %d\n", key, i)
+
+	// Example where GET returns no results
+	key = "Nonexistent Key"
+	s, err = redis.String(c.Do("GET", key))
+	if err == redis.ErrNil {
+		fmt.Printf("%s does not exist\n", key)
+	} else if err != nil {
+		return err
+	} else {
+		fmt.Printf("%s = %s\n", key, s)
+	}
 
 	return nil
 }
@@ -107,6 +137,8 @@ type User struct {
 
 func setStruct(c redis.Conn) error {
 
+	const objectPrefix string = "user:"
+
 	usr := User{
 		Username:  "otto",
 		MobileID:  1234567890,
@@ -115,12 +147,14 @@ func setStruct(c redis.Conn) error {
 		LastName:  "Maddox",
 	}
 
+	// serialize User object to JSON
 	json, err := json.Marshal(usr)
 	if err != nil {
 		return err
 	}
 
-	_, err = c.Do("SET", "user:"+usr.Username, json)
+	// SET object
+	_, err = c.Do("SET", objectPrefix+usr.Username, json)
 	if err != nil {
 		return err
 	}
@@ -130,7 +164,10 @@ func setStruct(c redis.Conn) error {
 
 func getStruct(c redis.Conn) error {
 
-	s, err := redis.String(c.Do("GET", "user:otto"))
+	const objectPrefix string = "user:"
+
+	username := "otto"
+	s, err := redis.String(c.Do("GET", objectPrefix+username))
 	if err == redis.ErrNil {
 		fmt.Println("User does not exist")
 	} else if err != nil {
